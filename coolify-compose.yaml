@@ -9,12 +9,15 @@
 #      Fill them in — at minimum CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY.
 #   3. Under "Domains for auth-gate" put your public hostname.
 #      Leave "Domains for webtop" completely empty. webtop is internal-only.
-#   4. Deploy.
+#   4. Save -> Reload Compose File -> Redeploy.
 #
-# Why auth-gate is listed first:
-#   Coolify uses the first service in the compose file as the "primary"
-#   for domain routing heuristics. Putting auth-gate first removes any
-#   ambiguity. webtop is explicitly opted out of Traefik via labels.
+# Isolation model:
+#   - webtop runs on a PRIVATE network only. Coolify's reverse proxy
+#     cannot reach it even if someone tries to add a domain to it.
+#   - auth-gate runs on BOTH the private network (to reach webtop) and
+#     the default Coolify network (so the proxy can reach auth-gate).
+#   - Explicit Traefik labels pin routing to auth-gate:8080, bypassing
+#     Coolify's magic-var heuristics entirely.
 
 services:
   auth-gate:
@@ -24,26 +27,29 @@ services:
     restart: unless-stopped
     depends_on:
       - webtop
+    networks:
+      - default        # Coolify's shared proxy network
+      - private        # to reach webtop
     environment:
-      # SERVICE_FQDN_AUTHGATE_8080 is Coolify magic: declaring it here
-      # tells Coolify to auto-generate Traefik labels routing the domain
-      # assigned to this service through to port 8080 in the container.
+      # SERVICE_FQDN_AUTHGATE_8080 tells Coolify to populate the label
+      # expansion below with whatever domain you assign to this service.
       - SERVICE_FQDN_AUTHGATE_8080
       - PORT=8080
       - UPSTREAM=http://webtop:3001
       - FORCE_HTTPS=true
       - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
       - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
-      # Comma-separated allow-list. Leave empty to allow any signed-in
-      # Clerk user. STRONGLY RECOMMENDED to restrict.
       - ALLOWED_EMAILS=${ALLOWED_EMAILS:-}
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
-    # No healthcheck: bun:1-alpine doesn't ship wget/curl reliably, and
-    # a failing healthcheck makes Traefik stop routing here, which in
-    # Coolify causes it to fall back to a different service that IS
-    # healthy — in this stack that's webtop's nginx, which is the exact
-    # bug we're avoiding. If you want a healthcheck, add one that uses
-    # `bun` itself to probe /healthz.
+    labels:
+      # Explicit Traefik labels — leave nothing to chance. Coolify keeps
+      # these and layers its own certresolver + entrypoints on top.
+      - "traefik.enable=true"
+      - "traefik.http.routers.authgate.rule=Host(`${SERVICE_FQDN_AUTHGATE_8080}`)"
+      - "traefik.http.routers.authgate.entrypoints=https"
+      - "traefik.http.routers.authgate.tls=true"
+      - "traefik.http.routers.authgate.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authgate.loadbalancer.server.port=8080"
 
   webtop:
     build:
@@ -53,13 +59,12 @@ services:
         INSTALL_HERMES: "true"
         HERMES_REF: "v2026.4.13"
     restart: unless-stopped
-    # Explicitly disable Traefik for webtop. Even if a user fills in a
-    # domain in the Coolify UI by mistake, Traefik will refuse to route
-    # to this service. webtop is only reachable from inside the compose
-    # network via auth-gate.
+    networks:
+      - private        # private-only, NOT on Coolify's proxy network
     labels:
+      # Hard opt-out from any reverse proxy. Defense in depth on top of
+      # the network isolation above.
       - "traefik.enable=false"
-      - "coolify.managed=true"
     volumes:
       - webtop-config:/config
     environment:
@@ -74,6 +79,10 @@ services:
       - seccomp=unconfined
     stop_signal: SIGRTMIN+3
     stop_grace_period: 30s
+
+networks:
+  private:
+    driver: bridge
 
 volumes:
   webtop-config:
