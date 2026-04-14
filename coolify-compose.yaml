@@ -62,13 +62,12 @@ services:
     depends_on:
       - webtop
     environment:
-      # SERVICE_FQDN_AUTHGATE_8080 is Coolify magic: it expands to the
-      # https://<your-domain> Coolify assigned to this service on port
-      # 8080 and automatically generates Traefik labels to route there.
+      # SERVICE_FQDN_AUTHGATE_8080 is Coolify magic: declaring it here
+      # tells Coolify to auto-generate Traefik labels routing the domain
+      # you assign to this service (port 8080) through to the container.
       # You DO NOT set this in the UI — Coolify injects it from the
-      # domain field you fill in.
+      # "Domains for auth-gate" field.
       - SERVICE_FQDN_AUTHGATE_8080
-      - PUBLIC_URL=$SERVICE_FQDN_AUTHGATE_8080
       - PORT=8080
       - UPSTREAM=http://webtop:3001
       - FORCE_HTTPS=true
