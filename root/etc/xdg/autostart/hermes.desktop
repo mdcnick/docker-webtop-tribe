@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes Agent
+Comment=Nous Research Hermes Agent — auto-start in terminal on login
+Exec=sh -c 'command -v hermes >/dev/null 2>&1 && exec xfce4-terminal --title="Hermes Agent" --command="hermes"'
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;
+X-GNOME-Autostart-enabled=true

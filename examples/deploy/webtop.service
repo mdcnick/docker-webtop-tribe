@@ -1,0 +1,24 @@
+# Systemd unit to autostart the compose stack on VPS boot.
+#
+# Install:
+#   sudo cp webtop.service /etc/systemd/system/webtop.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now webtop.service
+#
+# Edit WorkingDirectory to wherever you cloned the repo on the VPS.
+
+[Unit]
+Description=Webtop Tribe (compose stack)
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/docker-webtop-tribe/examples/deploy
+ExecStart=/usr/bin/podman compose up -d
+ExecStop=/usr/bin/podman compose down
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

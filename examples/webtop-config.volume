@@ -1,0 +1,5 @@
+# Podman Quadlet volume for webtop /config.
+# Install alongside webtop.container in the same directory.
+
+[Volume]
+VolumeName=webtop-config

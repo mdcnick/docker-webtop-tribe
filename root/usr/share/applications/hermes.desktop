@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hermes Agent
+GenericName=AI Agent
+Comment=Nous Research Hermes Agent (self-improving AI CLI)
+Exec=xfce4-terminal --title="Hermes Agent" --command="hermes"
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;ConsoleOnly;
+Keywords=ai;agent;llm;nous;hermes;

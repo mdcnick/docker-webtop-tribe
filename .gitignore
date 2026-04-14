@@ -1,1 +1,5 @@
 .jenkins-external
+.env
+.env.local
+auth-gate/node_modules
+auth-gate/bun.lockb

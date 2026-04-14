@@ -1,0 +1,27 @@
+{
+	email {env.LETSENCRYPT_EMAIL}
+}
+
+{env.DOMAIN} {
+	encode zstd gzip
+
+	# Security headers. Caddy automatically redirects http -> https on
+	# port 80 for any named site, so HSTS is safe to set aggressively.
+	header {
+		# 2 years, include subdomains, HSTS preload eligible
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Remove Caddy's default server header
+		-Server
+	}
+
+	# Pure TLS terminator. All auth logic lives in the Bun auth-gate.
+	# Caddy handles WebSocket Upgrade automatically via reverse_proxy.
+	reverse_proxy auth-gate:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+}

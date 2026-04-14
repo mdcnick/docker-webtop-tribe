@@ -1,0 +1,81 @@
+# VPS deployment: webtop behind a Bun auth-gate (Clerk) and Caddy (TLS).
+#
+#   Client -> Caddy :443 (TLS) -> auth-gate :8080 (Clerk verify) -> webtop :3001
+#
+# webtop and auth-gate never bind a host port. The only thing reachable
+# from the internet is Caddy. Unauthenticated users hit the Bun gate,
+# which serves a Clerk sign-in page; after login, Clerk's session cookie
+# is verified on every request (including WebSocket upgrades for Selkies).
+#
+# Quickstart on a fresh VPS:
+#   git clone <this-repo> /opt/docker-webtop-tribe
+#   cd /opt/docker-webtop-tribe
+#   podman build --build-arg INSTALL_HERMES=true -t localhost/webtop-tribe:latest .
+#   podman build -t localhost/webtop-auth-gate:latest auth-gate/
+#   cd examples/deploy
+#   cp .env.example .env && $EDITOR .env   # set DOMAIN + Clerk keys
+#   sudo cp webtop.service /etc/systemd/system/ && sudo systemctl enable --now webtop
+
+name: webtop
+
+services:
+  webtop:
+    image: localhost/webtop-tribe:latest
+    container_name: webtop
+    restart: unless-stopped
+    networks: [edge]
+    volumes:
+      - webtop-config:/config
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      UMASK: "027"
+      TZ: ${TZ:-Etc/UTC}
+    shm_size: 1gb
+    security_opt:
+      - seccomp=unconfined
+    stop_signal: SIGRTMIN+3
+    stop_grace_period: 30s
+
+  auth-gate:
+    image: localhost/webtop-auth-gate:latest
+    container_name: auth-gate
+    restart: unless-stopped
+    networks: [edge]
+    depends_on:
+      - webtop
+    environment:
+      PORT: "8080"
+      UPSTREAM: http://webtop:3001
+      PUBLIC_URL: https://${DOMAIN}
+      FORCE_HTTPS: "true"
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      # Comma-separated allow-lists. Leave empty to allow any signed-in
+      # Clerk user. Set one or both to restrict.
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:-}
+
+  caddy:
+    image: docker.io/caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    networks: [edge]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - caddy-data:/data
+      - caddy-config:/config
+
+networks:
+  edge:
+
+volumes:
+  webtop-config:
+  caddy-data:
+  caddy-config:

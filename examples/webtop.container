@@ -1,0 +1,59 @@
+# Podman Quadlet unit for webtop-tribe.
+#
+# Install:
+#   cp webtop.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload
+#   systemctl --user start webtop
+#
+# Rootful: drop it in /etc/containers/systemd/ instead and use systemctl (no --user).
+#
+# Requires podman >= 4.4.
+
+[Unit]
+Description=Webtop Tribe (Alpine XFCE)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/webtop-tribe:latest
+ContainerName=webtop
+
+# No UserNS= line on purpose. LSIO images must boot as uid 0 inside the
+# container; rootless podman's default userns does that by mapping
+# container uid 0 to your host user via /etc/subuid. Any form of
+# --userns=keep-id starts the container as a non-root uid inside and
+# breaks init-nginx, init-selkies, and the PUID/PGID remap.
+
+# chromium needs a bigger shm and relaxed seccomp
+ShmSize=1g
+PodmanArgs=--security-opt seccomp=unconfined
+
+PublishPort=3001:3001
+
+# Named volume keeps /config ownership inside the userns so the host
+# never sees weird subuid ownership. Podman creates it on first start.
+Volume=webtop-config.volume:/config
+
+Environment=PUID=1000
+Environment=PGID=1000
+Environment=UMASK=027
+Environment=TZ=Etc/UTC
+Environment=ENTERPRISE_FULLNAME=Corp User
+Environment=ENTERPRISE_GROUPS=devs:1001
+
+# graceful s6-overlay shutdown
+StopSignal=SIGRTMIN+3
+StopTimeout=30
+
+HealthCmd=wget -qO- http://localhost:3001/ >/dev/null 2>&1 || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthStartPeriod=30s
+HealthRetries=3
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
