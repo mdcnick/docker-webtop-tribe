@@ -2,9 +2,21 @@
 
 **Analysis Date:** 2026-04-13
 
-This repository is a LinuxServer.io (LSIO) Docker image fork (webtop / Alpine XFCE). It contains no application source code — only Dockerfiles, shell scripts, XML defaults, and LSIO CI metadata. Conventions below follow upstream LSIO standards.
+This repository started as a LinuxServer.io (LSIO) webtop fork and has grown to include a Bun/TypeScript auth sidecar and a Caddy-fronted compose deployment. It now spans **three distinct style domains**. Match the conventions of the domain you are editing — do not cross-pollinate (no TypeScript idioms in shell scripts, no bash idioms in Caddyfile, no `docker-compose.yml` literals where `${VAR}` substitution is expected).
 
-## Repository Layout Conventions
+## Domain map
+
+| Domain | Paths | Style source |
+|---|---|---|
+| 1. LSIO base image | `Dockerfile`, `Dockerfile.aarch64`, `root/`, `Jenkinsfile`, `jenkins-vars.yml`, `readme-vars.yml`, `package_versions.txt` | Upstream LSIO templates |
+| 2. auth-gate (Bun/TS) | `auth-gate/server.ts`, `auth-gate/package.json`, `auth-gate/tsconfig.json`, `auth-gate/Dockerfile`, `auth-gate/bun.lock*` | Bun + strict TS ESM |
+| 3. Deploy stack | `examples/deploy/compose.yml`, `examples/deploy/Caddyfile`, `examples/deploy/.env.example`, `examples/podman-run.sh` | Compose spec + Caddy v2 |
+
+---
+
+## Domain 1: LSIO Base Image (Dockerfile + shell)
+
+### Repository Layout Conventions
 
 **Top-level files (LSIO standard, do not rename):**
 - `Dockerfile` - x86_64 build
@@ -21,7 +33,7 @@ This repository is a LinuxServer.io (LSIO) Docker image fork (webtop / Alpine XF
 - `root/usr/bin/` - wrapper scripts that shadow distro binaries (e.g. `chromium`, `thunar`)
 - Paths under `root/` mirror their destination in the container exactly.
 
-## Dockerfile Conventions
+### Dockerfile Conventions
 
 **Base image:**
 - Always `FROM ghcr.io/linuxserver/baseimage-selkies:alpine323` (or the pinned LSIO base).
@@ -45,7 +57,7 @@ ENV TITLE="Alpine XFCE"
 
 **Indentation and style:**
 - Two-space indentation for continued lines inside `RUN`.
-- Lowercase Dockerfile instructions are acceptable where upstream uses them, but LSIO convention is UPPERCASE (`RUN`, `COPY`, `ENV`, `EXPOSE`, `VOLUME`).
+- LSIO convention is UPPERCASE Dockerfile instructions (`RUN`, `COPY`, `ENV`, `EXPOSE`, `VOLUME`).
 - `COPY /root /` is always the final file-adding step before `EXPOSE` / `VOLUME`.
 
 **Ports and volumes (LSIO webtop standard):**
@@ -55,58 +67,139 @@ ENV TITLE="Alpine XFCE"
 **Dual-arch parity:**
 - Any change to `Dockerfile` must be mirrored in `Dockerfile.aarch64`. The two files differ only where arch-specific packages are required.
 
-## Shell Script Conventions (`root/defaults/`, `root/usr/bin/`)
+### Shell Script Conventions (`root/defaults/`, `root/usr/bin/`)
 
-**Shebang:**
-- `#!/bin/bash` (LSIO standard; `/bin/bash` is present in the base image). Note that `root/usr/bin/chromium` uses `#! /bin/bash` — either spacing is tolerated.
-
-**Style patterns observed:**
-- Quote `"${HOME}"` and `"${VAR}"` expansions.
-- Use `[ ... ]` test brackets (POSIX), not `[[ ... ]]`.
+- Shebang `#!/bin/bash` (LSIO base provides bash).
+- Quote `"${HOME}"` / `"${VAR}"` expansions.
+- Use POSIX `[ ... ]` test brackets, not `[[ ... ]]`, in this domain.
 - Guard one-time setup with existence checks (`if [ ! -d ... ]; then ... fi`).
 - Seed user config by copying from `/defaults/...` into `${HOME}/.config/...`.
-- Terminal entry points `exec` the final process so PID hierarchy stays clean.
+- `exec` the final process so PID hierarchy stays clean.
 - Redirect noisy output to `/dev/null 2>&1` where appropriate.
-- Short inline `#` comments explain *why* (e.g. "Bugfix for Chromium in Alpine"), not *what*.
+- Short inline `#` comments explain *why*, not *what*.
 
 **Wrapper binary pattern (`root/usr/bin/chromium`):**
-- Rename real binary (`mv /usr/bin/thunar /usr/bin/thunar-real` in Dockerfile), then ship a wrapper at the original path that adjusts env and flags before `exec`-ing the real one.
+- Rename real binary (`mv /usr/bin/thunar /usr/bin/thunar-real`) in Dockerfile, then ship a wrapper at the original path that adjusts env/flags before `exec`-ing the real one.
 - Detect privileged vs unprivileged containers via `grep -q 'Seccomp:.0' /proc/1/status` and branch sandbox flags accordingly.
 
-## XML / Config Defaults
+### XML / Config Defaults
 
 - XFCE channel XMLs live under `root/defaults/xfce/` and are copied into the user's `xfconf` dir by `startwm.sh` on first launch.
-- Treat these as user-editable defaults — keep them minimal and match upstream XFCE schema.
+- Keep them minimal and match upstream XFCE schema.
 
-## YAML Conventions
+### YAML Conventions (`jenkins-vars.yml` / `readme-vars.yml`)
 
-**`jenkins-vars.yml` / `readme-vars.yml`:**
 - Two-space indentation.
-- `repo_vars` is a list of `KEY = 'value'` strings (quoted with single quotes) — format must match `Jenkinsfile` `environment {}` block verbatim.
+- `repo_vars` is a list of `KEY = 'value'` strings (single-quoted) — format must match `Jenkinsfile` `environment {}` block verbatim.
 - Keep keys in the order used by the LSIO template; the jenkins-builder bot relies on it.
 
-## README Generation
+### README Generation
 
-- **Never edit `README.md` directly.** It is regenerated from `readme-vars.yml` by the LSIO jenkins-builder and committed by a bot ("Bot Updating Templated Files").
+- **Never edit `README.md` directly.** Regenerated from `readme-vars.yml` by the LSIO jenkins-builder and committed by a bot (`Bot Updating Templated Files`).
 - All user-facing doc changes go in `readme-vars.yml`.
 
-## Commit Conventions
-
-Observed in `git log`:
-- Bot commits: `Bot Updating Package Versions`, `Bot Updating Templated Files` — do not squash or rewrite.
-- Human commits: short imperative summary, optionally `(#PR)` suffix (e.g. `update readme for resolute rebase (#405)`).
-- No Conventional Commits prefix (`feat:`, `fix:`) — LSIO does not use them.
-
-## Versioning
+### Versioning
 
 - Image version is derived from upstream `XFCE_VERSION` (`BUILD_VERSION_ARG` in `jenkins-vars.yml`) plus LSIO build suffix `-lsNN`.
 - `package_versions.txt` is regenerated per build; never hand-edit.
 
+---
+
+## Domain 2: auth-gate (Bun + TypeScript)
+
+### Layout
+
+- `auth-gate/server.ts` — single-entry HTTP + WebSocket server (no framework).
+- `auth-gate/package.json` — Bun-managed; dependency ranges are caret (`^1.2.3`).
+- `auth-gate/tsconfig.json` — strict, `target: ESNext`, `module: ESNext`, `moduleResolution: bundler`.
+- `auth-gate/Dockerfile` — multi-stage on `oven/bun:1-alpine`.
+- `auth-gate/bun.lock` / `bun.lockb` — committed; rebuilds must be reproducible.
+
+### TypeScript Style
+
+- **ES modules only.** `import { x } from "pkg"`, never `require`.
+- **Strict mode on**, no implicit `any`, no unused locals, no unchecked indexed access.
+- `camelCase` for functions, variables, locals.
+- `PascalCase` for types, interfaces, classes.
+- `SCREAMING_SNAKE_CASE` for module-level env-derived constants (e.g. `CLERK_SECRET_KEY`).
+- Prefer `const` over `let`; never `var`.
+- Top-level `await` is allowed for startup.
+- `server.ts` is an entry point — no default export.
+
+### Runtime Patterns
+
+- `Bun.serve({ fetch, websocket })` is the single HTTP/WS entry point.
+- `@clerk/backend` for session verification — instantiate the client **once** at module scope, reuse across requests.
+- Read env via `Bun.env.VAR_NAME`; validate required vars at startup and throw **before** calling `Bun.serve`.
+- Return typed `Response` objects from `fetch`; never throw out of the handler.
+- 401 → redirect to Clerk sign-in; 403 → JSON error; 5xx → generic message + `console.error` with details.
+- WebSocket upgrade rejection: return `new Response("Unauthorized", { status: 401 })` — do **not** call `server.upgrade()` on unauthenticated requests.
+
+### Logging
+
+- `console.log` / `console.error` only — no logger dependency.
+- Prefix every line with component tag: `console.log("[auth-gate] ...")`.
+- Log at minimum: redacted startup config, auth allow/deny decisions with reason, WS upgrade events.
+
+### auth-gate Dockerfile
+
+- Stage 1 (`deps`): `bun install --frozen-lockfile --production`.
+- Stage 2 (runtime): fresh `oven/bun:1-alpine`, copy `node_modules` + `server.ts` + `tsconfig.json`.
+- `CMD ["bun", "run", "server.ts"]`.
+- `HEALTHCHECK` hitting `/healthz`.
+- Drop to non-root where the base image supports it.
+
+---
+
+## Domain 3: Compose + Caddy deployment (`examples/deploy/`)
+
+### compose.yml Conventions
+
+- No `version:` key (modern Compose spec).
+- **All secrets/hostnames via `${VAR}` substitution** — no literals. Known vars: `${DOMAIN}`, `${CLERK_SECRET_KEY}`, `${CLERK_PUBLISHABLE_KEY}`, `${CLERK_AUTHORIZED_PARTIES}`.
+- **Named volumes** for persistent state (webtop `/config`, caddy data, caddy config).
+- **Internal networks** — only `caddy` publishes ports to the host; `webtop` and `auth-gate` sit on an internal bridge and are unreachable from outside.
+- `restart: unless-stopped` on all long-running services.
+- `depends_on` with `condition: service_healthy` where a healthcheck exists.
+- Service names are kebab-case: `auth-gate`, `webtop`, `caddy`.
+
+### Caddyfile Conventions
+
+- Rely on **automatic HTTPS** (ACME). No manual cert paths.
+- Global `{ }` block only for ACME email + tuning.
+- Per-site blocks keyed by `${DOMAIN}`.
+- Security headers via `header` directive, always including:
+  - `Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"`
+  - `X-Content-Type-Options nosniff`
+  - `X-Frame-Options DENY` (adjust only if webtop iframe needs force it)
+  - `Referrer-Policy strict-origin-when-cross-origin`
+- `reverse_proxy` targets `auth-gate:<port>` — auth-gate fronts webtop; Caddy never proxies webtop directly.
+- WebSocket passthrough is implicit in Caddy `reverse_proxy`; do not add manual upgrade handling.
+
+### Env Var Discipline
+
+- Every variable referenced in `compose.yml` or `Caddyfile` MUST appear in `.env.example` with a comment describing its source (e.g. "From Clerk dashboard → API Keys").
+- Never commit a real `.env`.
+- Two-space indentation for YAML; LF line endings; file ends with single newline.
+
+---
+
+## Cross-Domain Rules
+
+- **README is generated** from `readme-vars.yml`. Hand-edit `readme-vars.yml`, not `README.md`.
+- **Never hand-edit** `package_versions.txt`.
+- **File paths in docs** use backticks and are repo-relative.
+- **No secrets in repo.** LSIO build-time creds come from Jenkins `credentials()`; runtime secrets come from `.env` / compose env.
+- **No Conventional Commits prefix** — LSIO style uses a short imperative summary, optionally `(#PR)` suffix. Bot commits (`Bot Updating Package Versions`, `Bot Updating Templated Files`) must not be squashed or rewritten.
+- **Indentation:** 2 spaces for YAML / TS / Caddyfile; match the existing file for shell.
+- **No trailing whitespace**; files end with a single newline.
+
 ## What NOT to Add
 
-- No application source, no `package.json`, no linter configs — this is a packaging repo.
-- No `docker-compose.yml` in-repo (examples live in `readme-vars.yml`).
-- No secrets; all credentials are injected via Jenkins `credentials()` at build time.
+- No application source to the LSIO base image — keep it a packaging repo.
+- No Jest/Vitest/Node test harness in `auth-gate/` — if tests land, use `bun test`.
+- No in-repo `docker-compose.yml` at root — the reference stack lives under `examples/deploy/`.
+- No linter configs without also wiring them into CI.
 
 ---
 
