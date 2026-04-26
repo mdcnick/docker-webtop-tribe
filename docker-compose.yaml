@@ -2,10 +2,11 @@
 # Spin up a full Tribe Workspace on your PC with one command.
 #
 # Usage:
-#   1. cp .env.example .env
-#   2. Fill in CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY (pk_test_... / sk_test_... OK for localhost)
-#   3. docker compose up --build
-#   4. Open http://localhost:8080
+#   1. docker compose up --build
+#   2. Open http://localhost:8080
+#
+# Optional: cp .env.example .env and fill in Clerk keys if you want auth.
+# Without Clerk keys the gate runs in OPEN MODE (no auth).
 #
 # For production on a VPS with TLS, use examples/deploy/ or Coolify.
 
@@ -28,10 +29,11 @@ services:
       - PTY_HTTP=http://webtop:8081
       - PTY_WS=ws://webtop:8082
       - FORCE_HTTPS=false
-      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
-      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
-      - ALLOWED_EMAILS=${ALLOWED_EMAILS:-}
-      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+      # Uncomment and fill in if you want Clerk auth:
+      # - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-}
+      # - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
+      # - ALLOWED_EMAILS=${ALLOWED_EMAILS:-}
+      # - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
 
   webtop:
     build:

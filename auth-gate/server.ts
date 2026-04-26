@@ -1,11 +1,9 @@
 // Auth gate: Clerk session verification + HTTP/WebSocket reverse proxy.
 //
-// Client -> (TLS) -> Caddy -> (HTTP) -> this Bun server -> (HTTP/WS) -> webtop:3001
-//
-// Every request is checked against Clerk. Unauthenticated users get a
-// 302 redirect to /auth/sign-in which serves a tiny HTML page hosting
-// Clerk's drop-in <SignIn/> component. After login, Clerk sets a
-// __session cookie that @clerk/backend verifies on subsequent requests.
+// Two modes:
+//   1. SECURED (default) — Clerk keys provided. Every request verified.
+//   2. OPEN — no Clerk keys. All requests pass through. Use for local
+//      agent desktop where auth is handled upstream (e.g. Tribe Chat UI).
 //
 // Terminal routes (/terminal/*) are proxied to the pty-server running
 // inside the webtop container instead of Selkies.
@@ -34,15 +32,19 @@ const ALLOWED_USER_IDS = (Bun.env.ALLOWED_USER_IDS ?? "")
   .map((u) => u.trim())
   .filter(Boolean);
 
-if (!CLERK_SECRET_KEY || !CLERK_PUBLISHABLE_KEY) {
-  console.error("CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY are required");
-  process.exit(1);
-}
+// If Clerk keys are missing, run in OPEN mode — no auth required.
+const OPEN_MODE = !CLERK_SECRET_KEY || !CLERK_PUBLISHABLE_KEY;
 
-const clerk = createClerkClient({
-  secretKey: CLERK_SECRET_KEY,
-  publishableKey: CLERK_PUBLISHABLE_KEY,
-});
+let clerk: ReturnType<typeof createClerkClient> | null = null;
+
+if (!OPEN_MODE) {
+  clerk = createClerkClient({
+    secretKey: CLERK_SECRET_KEY,
+    publishableKey: CLERK_PUBLISHABLE_KEY,
+  });
+} else {
+  console.warn("[auth-gate] OPEN MODE — no Clerk keys configured. All requests pass through.");
+}
 
 const upstreamUrl = new URL(UPSTREAM);
 const upstreamWsUrl = `ws://${upstreamUrl.host}`;
@@ -56,7 +58,7 @@ async function isAuthorized(auth: SignedInAuthObject): Promise<boolean> {
   if (!ALLOWED_EMAILS.length && !ALLOWED_USER_IDS.length) return true;
   if (ALLOWED_USER_IDS.includes(auth.userId)) return true;
   if (ALLOWED_EMAILS.length) {
-    const user = await clerk.users.getUser(auth.userId);
+    const user = await clerk!.users.getUser(auth.userId);
     const emails = user.emailAddresses.map((e) =>
       e.emailAddress.toLowerCase(),
     );
@@ -66,8 +68,12 @@ async function isAuthorized(auth: SignedInAuthObject): Promise<boolean> {
 }
 
 async function verify(req: Request): Promise<SignedInAuthObject | null> {
+  if (OPEN_MODE) {
+    // Return a fake auth object so downstream code doesn't need branching.
+    return { userId: "anonymous" } as SignedInAuthObject;
+  }
   try {
-    const res = await clerk.authenticateRequest(req, {
+    const res = await clerk!.authenticateRequest(req, {
       secretKey: CLERK_SECRET_KEY,
       publishableKey: CLERK_PUBLISHABLE_KEY,
     });
@@ -76,9 +82,6 @@ async function verify(req: Request): Promise<SignedInAuthObject | null> {
     if (!(await isAuthorized(auth))) return null;
     return auth;
   } catch (err) {
-    // Clerk throws on malformed keys, network errors, etc. Treat any
-    // failure as "not authenticated" rather than leaking a 500 — the
-    // user just gets bounced to the sign-in page.
     console.error("clerk verify failed:", (err as Error).message);
     return null;
   }
@@ -140,6 +143,7 @@ const server = Bun.serve({
     }
 
     // Public routes: sign-in page and health check.
+    // In OPEN mode the sign-in page still exists but nothing redirects to it.
     if (url.pathname === "/auth/sign-in") return signInPage();
     if (url.pathname === "/healthz") return new Response("ok");
 
@@ -266,5 +270,5 @@ const server = Bun.serve({
 });
 
 console.log(
-  `auth-gate listening on :${server.port} -> ${UPSTREAM} (${ALLOWED_EMAILS.length || ALLOWED_USER_IDS.length ? "allowlist" : "any signed-in user"})`,
+  `auth-gate listening on :${server.port} -> ${UPSTREAM} (${OPEN_MODE ? "OPEN MODE — no auth" : ALLOWED_EMAILS.length || ALLOWED_USER_IDS.length ? "allowlist" : "any signed-in user"})`,
 );
