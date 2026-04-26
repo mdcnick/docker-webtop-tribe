@@ -1,0 +1,76 @@
+# Local dev docker-compose for docker-webtop-tribe.
+# Spin up a full Tribe Workspace on your PC with one command.
+#
+# Usage:
+#   1. cp .env.example .env
+#   2. Fill in CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY (pk_test_... / sk_test_... OK for localhost)
+#   3. docker compose up --build
+#   4. Open http://localhost:8080
+#
+# For production on a VPS with TLS, use examples/deploy/ or Coolify.
+
+services:
+  auth-gate:
+    build:
+      context: ./auth-gate
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - webtop
+    networks:
+      - default        # public-facing
+      - private        # internal only
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - UPSTREAM=http://webtop:3001
+      - PTY_HTTP=http://webtop:8081
+      - PTY_WS=ws://webtop:8082
+      - FORCE_HTTPS=false
+      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - ALLOWED_EMAILS=${ALLOWED_EMAILS:-}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+
+  webtop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_HERMES: "true"
+        HERMES_REF: ${HERMES_REF:-v2026.4.13}
+        EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
+        REMOVE_PACKAGES: ${REMOVE_PACKAGES:-}
+        INCLUDE_CHROMIUM: ${INCLUDE_CHROMIUM:-true}
+    restart: unless-stopped
+    networks:
+      - private
+    volumes:
+      - webtop-config:/config
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=027
+      - TZ=${TZ:-Etc/UTC}
+      - TITLE=${TITLE:-Tribe Workspace}
+      - ENTERPRISE_FULLNAME=${ENTERPRISE_FULLNAME:-}
+      - ENTERPRISE_GROUPS=${ENTERPRISE_GROUPS:-}
+      - ENTERPRISE_SUDO=false
+      - HARDEN_DESKTOP=${HARDEN_DESKTOP:-true}
+      - DISABLE_SUDO=${DISABLE_SUDO:-true}
+      - DISABLE_OPEN_TOOLS=${DISABLE_OPEN_TOOLS:-true}
+      - PTY_PORT=8081
+      - PTY_CWD=/config/workspace
+    shm_size: 1gb
+    security_opt:
+      - seccomp=unconfined
+    stop_signal: SIGRTMIN+3
+    stop_grace_period: 30s
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  webtop-config:
