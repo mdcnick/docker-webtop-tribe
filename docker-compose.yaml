@@ -1,40 +1,15 @@
-# Local dev docker-compose for docker-webtop-tribe.
-# Spin up a full Tribe Workspace on your PC with one command.
+# Local dev docker-compose for Tribe Agent Desktop.
+# A single-container workspace: XFCE desktop + Hermes + PTY server.
 #
 # Usage:
-#   1. docker compose up --build
-#   2. Open http://localhost:8080
+#   docker compose up --build
+#   Desktop:  http://localhost:3001
+#   Terminal: ws://localhost:8082  (xterm.js)
+#   Hermes:   http://localhost:8081/exec  (shell command API)
 #
-# Optional: cp .env.example .env and fill in Clerk keys if you want auth.
-# Without Clerk keys the gate runs in OPEN MODE (no auth).
-#
-# For production on a VPS with TLS, use examples/deploy/ or Coolify.
+# For corporate/team use with Clerk auth, see coolify-compose.yaml.
 
 services:
-  auth-gate:
-    build:
-      context: ./auth-gate
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - webtop
-    networks:
-      - default        # public-facing
-      - private        # internal only
-    ports:
-      - "8080:8080"
-    environment:
-      - PORT=8080
-      - UPSTREAM=http://webtop:3001
-      - PTY_HTTP=http://webtop:8081
-      - PTY_WS=ws://webtop:8082
-      - FORCE_HTTPS=false
-      # Uncomment and fill in if you want Clerk auth:
-      # - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-}
-      # - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
-      # - ALLOWED_EMAILS=${ALLOWED_EMAILS:-}
-      # - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
-
   webtop:
     build:
       context: .
@@ -46,8 +21,10 @@ services:
         REMOVE_PACKAGES: ${REMOVE_PACKAGES:-}
         INCLUDE_CHROMIUM: ${INCLUDE_CHROMIUM:-true}
     restart: unless-stopped
-    networks:
-      - private
+    ports:
+      - "3001:3001"   # Selkies desktop (HTTPS)
+      - "8081:8081"   # PTY server HTTP API
+      - "8082:8082"   # PTY server WebSocket
     volumes:
       - webtop-config:/config
     environment:
@@ -69,10 +46,6 @@ services:
       - seccomp=unconfined
     stop_signal: SIGRTMIN+3
     stop_grace_period: 30s
-
-networks:
-  private:
-    driver: bridge
 
 volumes:
   webtop-config:

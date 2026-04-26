@@ -95,7 +95,7 @@ COPY /root /
 RUN chmod +x /usr/local/bin/browser-lock /usr/local/bin/hnotify
 
 # ports and volumes
-EXPOSE 3001 8081
+EXPOSE 3001 8081 8082
 
 VOLUME /config
 
