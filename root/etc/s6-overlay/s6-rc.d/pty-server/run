@@ -1,0 +1,12 @@
+#!/command/with-contenv bash
+# PTY server — shared terminal for Hermes exec API + user xterm.js WS.
+
+export PTY_PORT="${PTY_PORT:-8081}"
+export PTY_CWD="${PTY_CWD:-/config/workspace}"
+export PTY_SHELL="${PTY_SHELL:-/bin/bash}"
+
+# Ensure workspace dir exists
+mkdir -p "$PTY_CWD"
+
+exec s6-setuidgid abc \
+  /opt/pty-server/venv/bin/python /opt/pty-server/server.py

@@ -1,0 +1,33 @@
+#!/bin/sh
+# browser-lock — fullscreen overlay that blocks user mouse/keyboard input
+# while Hermes is controlling the browser via automation.
+#
+# Usage:
+#   browser-lock start "Searching on Google..."
+#   browser-lock stop
+
+PIDFILE=/tmp/browser-lock.pid
+
+start_lock() {
+    msg="${1:-Hermes is controlling the browser}"
+    yad --form --title="Hermes Lock" \
+        --text="<big><b>🔒 ${msg}</b></big>\n\nPlease wait while Hermes completes this step." \
+        --no-buttons --undecorated --on-top --skip-taskbar --sticky \
+        --fullscreen \
+        --bg="#0f0f23" --fg="#00d4aa" \
+        --fontname="Sans Bold 16" &
+    echo $! > "$PIDFILE"
+}
+
+stop_lock() {
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+}
+
+case "$1" in
+    start) start_lock "$2" ;;
+    stop)  stop_lock ;;
+    *)     echo "Usage: $0 start [message] | stop" >&2; exit 1 ;;
+esac

@@ -6,11 +6,17 @@
 // 302 redirect to /auth/sign-in which serves a tiny HTML page hosting
 // Clerk's drop-in <SignIn/> component. After login, Clerk sets a
 // __session cookie that @clerk/backend verifies on subsequent requests.
+//
+// Terminal routes (/terminal/*) are proxied to the pty-server running
+// inside the webtop container instead of Selkies.
 
 import { createClerkClient, type SignedInAuthObject } from "@clerk/backend";
 
 const PORT = Number(Bun.env.PORT ?? 8080);
 const UPSTREAM = Bun.env.UPSTREAM ?? "http://webtop:3001";
+const PTY_HTTP = Bun.env.PTY_HTTP ?? "http://webtop:8081";
+const PTY_WS = Bun.env.PTY_WS ?? "ws://webtop:8082";
+
 // Force http -> https redirect based on X-Forwarded-Proto. Enable in
 // production so that any path that reaches the gate over plain http
 // (misconfigured LB, direct container exposure) is bounced to https.
@@ -40,6 +46,8 @@ const clerk = createClerkClient({
 
 const upstreamUrl = new URL(UPSTREAM);
 const upstreamWsUrl = `ws://${upstreamUrl.host}`;
+const ptyHttpUrl = new URL(PTY_HTTP);
+const ptyWsUrl = new URL(PTY_WS);
 
 // Authorize the authenticated user against the allow-lists. An empty
 // allow-list means "any signed-in user is allowed" — tighten this in
@@ -146,6 +154,39 @@ const server = Bun.serve({
         status: 302,
         headers: { location: "/auth/sign-in" },
       });
+    }
+
+    // Terminal WebSocket — proxy to pty-server WS port.
+    if (url.pathname.startsWith("/terminal/ws") || url.pathname.startsWith("/terminal/lock")) {
+      if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        const target = ptyWsUrl.origin + url.pathname + url.search;
+        if (server.upgrade(req, { data: { target, userId: auth.userId } })) {
+          return;
+        }
+        return new Response("upgrade failed", { status: 500 });
+      }
+    }
+
+    // Terminal HTTP API — proxy to pty-server HTTP port.
+    if (url.pathname.startsWith("/terminal/exec") || url.pathname.startsWith("/terminal/resize")) {
+      const proxied = new Request(
+        ptyHttpUrl.origin + url.pathname.replace("/terminal", "") + url.search,
+        {
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          // @ts-expect-error Bun supports duplex:'half' for streaming bodies
+          duplex: "half",
+          redirect: "manual",
+        },
+      );
+      proxied.headers.set("x-forwarded-user", auth.userId);
+      try {
+        return await fetch(proxied);
+      } catch (err) {
+        console.error("pty upstream fetch failed", err);
+        return new Response("bad gateway", { status: 502 });
+      }
     }
 
     // WebSocket upgrade: hand off to Bun's WS handler with the target

@@ -1,0 +1,3 @@
+#!/command/with-contenv bash
+# s6 finish script for pty-server
+exit 0

@@ -59,6 +59,16 @@ RUN \
     echo "**** install hermes runtime deps ****" && \
     apk add --no-cache python3 libffi openssl libstdc++ git ; \
   fi && \
+  echo "**** install pty-server + desktop helpers ****" && \
+  apk add --no-cache \
+    libnotify \
+    py3-pip \
+    python3 \
+    xdotool \
+    yad && \
+  python3 -m venv /opt/pty-server/venv && \
+  /opt/pty-server/venv/bin/pip install --no-cache-dir \
+    aiohttp websockets && \
   echo "**** xfce-tweaks ****" && \
   mv \
     /usr/bin/thunar \
@@ -81,8 +91,11 @@ RUN if [ -x /opt/hermes/bin/hermes ]; then \
 # add local files
 COPY /root /
 
+# make helper scripts executable
+RUN chmod +x /usr/local/bin/browser-lock /usr/local/bin/hnotify
+
 # ports and volumes
-EXPOSE 3001
+EXPOSE 3001 8081
 
 VOLUME /config
 

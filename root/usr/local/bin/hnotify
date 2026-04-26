@@ -1,0 +1,14 @@
+#!/bin/sh
+# hnotify — desktop notification helper for Hermes inside the webtop.
+#
+# Usage:
+#   hnotify "Opening example.com..."
+#   hnotify --done
+
+icon="${HERMES_ICON:-utilities-terminal}"
+
+if [ "$1" = "--done" ]; then
+  notify-send --urgency=low --icon="$icon" "Hermes" "Finished ✓"
+else
+  notify-send --urgency=normal --icon="$icon" "Hermes" "$1"
+fi

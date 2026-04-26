@@ -36,6 +36,8 @@ services:
       - SERVICE_FQDN_AUTHGATE_8080
       - PORT=8080
       - UPSTREAM=http://webtop:3001
+      - PTY_HTTP=http://webtop:8081
+      - PTY_WS=ws://webtop:8082
       - FORCE_HTTPS=true
       - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
       - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
@@ -72,11 +74,23 @@ services:
       - PGID=1000
       - UMASK=027
       - TZ=${TZ:-Etc/UTC}
+      - TITLE=Tribe Workspace
       - ENTERPRISE_FULLNAME=${ENTERPRISE_FULLNAME:-}
       - ENTERPRISE_GROUPS=${ENTERPRISE_GROUPS:-}
+      - ENTERPRISE_SUDO=false
+      - HARDEN_DESKTOP=true
+      - DISABLE_SUDO=true
+      - DISABLE_OPEN_TOOLS=true
+      - PTY_PORT=8081
+      - PTY_CWD=/config/workspace
     shm_size: 1gb
     security_opt:
       - seccomp=unconfined
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/tmp
     stop_signal: SIGRTMIN+3
     stop_grace_period: 30s
 
